@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+  <title>经典背诵 · 章节定位</title>
+  
+  <!-- PWA 支持 -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#b4843c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="经典背诵">
+  
+  <style>
+    /* 样式保持不变 */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #f8f5f0; --surface: #fffaf5; --text: #2c2416; --text-light: #5e5544;
+      --border: #d9cdb3; --accent: #b4843c; --accent-hover: #9c6e30;
+      --correct: #2e7d32; --error: #b71c1c; --delete: #6d4c41; --insert: #c2185b; --swap: #e65100;
+      --chapter-bg: #f3ede3; --shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    body.dark {
+      --bg: #1e1b16; --surface: #29241c; --text: #ede3d3; --text-light: #bfb39b;
+      --border: #4e4434; --accent: #d4a056; --accent-hover: #c08a40;
+      --correct: #66bb6a; --error: #ef5350; --delete: #8d6e63; --insert: #f06292; --swap: #ff8a50;
+      --chapter-bg: #342e24; --shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    html, body {
+      height: 100%;
+      font-family: "Noto Serif SC", "Songti SC", "STSong", "华文宋体", "SimSun", serif;
+      background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s;
+    }
+    body {
+      display: flex;
+      overflow: hidden;
+    }
+    button, select, input, textarea { font-family: inherit; }
+    .sidebar {
+      width: 280px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.3s;
+      z-index: 20;
+      box-shadow: var(--shadow);
+      flex-shrink: 0;
+      height: 100%;
+    }
+    .sidebar-header {
+      padding: 0.8rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--chapter-bg);
+    }
+    .toggle-sidebar { background: none; border: none; font-size: 1.4rem; cursor: pointer; color: var(--text); }
+    .chapter-list { list-style: none; padding: 0.5rem 0; flex:1; overflow-y: auto; }
+    .book-title {
+      padding: 0.5rem 0.8rem; font-weight: bold; background: var(--chapter-bg);
+      cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.95rem;
+    }
+    .book-chapters { display: none; background: var(--surface); }
+    .book-chapters.open { display: block; }
+    .chapter-item {
+      padding: 0.4rem 0.8rem 0.4rem 1.8rem; cursor: pointer; display: flex;
+      align-items: center; gap: 0.5rem; border-bottom: 1px solid transparent; font-size: 0.9rem;
+    }
+    .chapter-item:hover { background: var(--chapter-bg); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #aaa; flex-shrink: 0; }
+    .status-dot.mastered { background: var(--correct); }
+    .status-dot.unfamiliar { background: var(--swap); }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-width: 0;
+    }
+    .top-bar {
+      padding: 0.5rem 0.8rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .menu-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text); display: none; }
+    .mode-switch { display: flex; gap: 0.3rem; background: var(--chapter-bg); border-radius: 16px; padding: 0.15rem; }
+    .mode-btn { padding: 0.3rem 0.7rem; border: none; background: transparent; border-radius: 16px; cursor: pointer; color: var(--text); font-size: 0.85rem; }
+    .mode-btn.active { background: var(--accent); color: white; }
+    .dark-toggle { margin-left: auto; background: none; border: 1px solid var(--border); border-radius: 16px; padding: 0.25rem 0.6rem; cursor: pointer; color: var(--text); font-size: 0.85rem; }
+    .result-toggle-btn { background: none; border: 1px solid var(--border); border-radius: 16px; padding: 0.25rem 0.6rem; cursor: pointer; color: var(--text); font-size: 0.85rem; display: none; }
+    .content-area {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      padding: 0.8rem;
+      gap: 0.8rem;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.8rem;
+      box-shadow: var(--shadow);
+      overflow-y: auto;
+      flex: 1;
+      min-width: 0;
+    }
+    .left-panel {
+      flex: 1 1 45%;
+    }
+    .right-panel {
+      flex: 1 1 55%;
+      display: flex;
+      flex-direction: column;
+    }
+    .right-panel h4 { margin-bottom: 0.5rem; font-size: 1rem; }
+    .question-box {
+      background: var(--chapter-bg); padding: 0.7rem; border-radius: 8px;
+      font-size: 1.1rem; margin-bottom: 0.7rem; border-left: 4px solid var(--accent);
+    }
+    select, .btn {
+      padding: 0.4rem 0.7rem; border-radius: 16px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text); cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .btn.primary { background: var(--accent); color: white; border: none; }
+    .btn.primary:hover { background: var(--accent-hover); }
+    .btn.active-tab { background: var(--accent); color: white; border-color: var(--accent); }
+    textarea {
+      width: 100%; padding: 0.6rem; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text); font-size: 0.95rem; line-height: 1.6;
+      resize: vertical; min-height: 100px;
+    }
+    .result-area { font-size: 0.9rem; line-height: 1.8; overflow-y: auto; }
+    .settings-panel { background: var(--surface); border: 1px solid var(--border); padding: 0.7rem; border-radius: 10px; margin-top: 0.5rem; }
+    .flex-row { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.4rem; }
+    .chapter-guess-area { display: none; gap: 0.4rem; align-items: center; margin-top: 0.4rem; }
+
+    @media (max-width: 767px) {
+      .sidebar { position: absolute; height: 100%; transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .menu-btn { display: block; }
+      .result-toggle-btn { display: inline-block; }
+      .content-area { flex-direction: column; padding: 0.5rem; gap: 0; }
+      .panel { padding: 0.5rem; border-radius: 8px; }
+      .left-panel { flex: 1 1 auto; }
+      .right-panel {
+        display: none;
+        flex: 1 1 auto;
+        max-height: 50vh;
+        margin-top: 0.5rem;
+      }
+      .right-panel.visible { display: flex; }
+      .top-bar { padding: 0.4rem 0.5rem; gap: 0.4rem; }
+      .question-box { font-size: 1rem; padding: 0.6rem; }
+      .btn { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+      select { font-size: 0.8rem; padding: 0.35rem 0.5rem; }
+      .mode-btn { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+      .dark-toggle, .result-toggle-btn { padding: 0.2rem 0.5rem; font-size: 0.8rem; }
+      textarea { font-size: 0.9rem; min-height: 80px; }
+    }
+    #diffDisplay, #originalDisplay { flex:1; overflow-y: auto; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h3>📖 经典章目</h3>
+      <button class="toggle-sidebar" id="closeSidebarBtn">✕</button>
+    </div>
+    <ul class="chapter-list" id="chapterList"></ul>
+  </div>
+
+  <div class="main" id="mainPanel">
+    <div class="top-bar">
+      <button class="menu-btn" id="menuBtn">☰</button>
+      <div class="mode-switch" id="modeSwitch">
+        <button class="mode-btn active" data-mode="identify">辨章</button>
+        <button class="mode-btn" data-mode="direct">直背</button>
+      </div>
+      <button class="dark-toggle" id="darkToggle">🌓</button>
+      <button class="result-toggle-btn" id="resultToggleBtn">📋 结果</button>
+    </div>
+
+    <div class="content-area">
+      <div class="panel left-panel">
+        <div id="modeOneUI">
+          <div class="question-box" id="questionText">点击下方按钮随机出题</div>
+          <div class="flex-row">
+            <select id="rangeSelect">
+              <option value="all">全部随机</option>
+              <option value="daode-all">帛书道德经全文</option>
+              <option value="daode-de">德经四十四章</option>
+              <option value="daode-dao">道经三十七章</option>
+              <option value="de-1-9">德经1-9章</option>
+              <option value="de-10-18">德经10-18章</option>
+              <option value="de-19-27">德经19-27章</option>
+              <option value="de-28-36">德经28-36章</option>
+              <option value="de-37-44">德经37-44章</option>
+              <option value="dao-1-9">道经1-9章</option>
+              <option value="dao-10-19">道经10-19章</option>
+              <option value="dao-20-28">道经20-28章</option>
+              <option value="dao-29-37">道经29-37章</option>
+            </select>
+            <label style="font-size:0.85rem;"><input type="checkbox" id="weightedCheck"> 错题优先</label>
+            <button class="btn primary" id="randomQuestionBtn">🎲 出题</button>
+          </div>
+          <div class="flex-row">
+            <button class="btn" id="showAnswerEarlyBtn" disabled>💡 提前看答案</button>
+            <span id="earlyAnswerHint" style="font-size:0.85rem; color: var(--text-light);"></span>
+          </div>
+          <div class="chapter-guess-area" id="chapterGuessArea">
+            <select id="chapterGuessSelect"></select>
+            <button class="btn" id="submitChapterGuess">确认</button>
+            <span id="chapterFeedback" style="font-size:0.9rem;"></span>
+          </div>
+        </div>
+
+        <div id="modeTwoUI" style="display:none;">
+          <p style="font-size:0.9rem;">从左侧列表点击章节或选择：</p>
+          <select id="directChapterSelect"></select>
+          <button class="btn primary" id="startDirectRecite">开始背诵</button>
+        </div>
+
+        <div id="reciteArea" style="display:none; margin-top:0.5rem;">
+          <h4 style="font-size:0.95rem;">✍️ 请输入背诵原文</h4>
+          <textarea id="userReciteInput" placeholder="在此默写章节全文..."></textarea>
+          <div class="flex-row" style="margin-top:0.4rem;">
+            <button class="btn primary" id="submitReciteBtn">核对</button>
+            <button class="btn" id="showAnswerBtn">💡 答案</button>
+            <button class="btn" id="voiceInputBtn">🎤 语音</button>
+          </div>
+        </div>
+
+        <div class="settings-panel">
+          <details>
+            <summary style="font-size:0.9rem;">✏️ 微调章节原文</summary>
+            <div style="margin-top:0.4rem;">
+              <div class="flex-row">
+                <select id="editChapterSelect" style="flex:1;"></select>
+                <button class="btn" id="loadEditTextBtn">加载</button>
+              </div>
+              <div class="flex-row" style="margin-top:0.3rem;">
+                <button class="btn" id="syncCurrentChapterBtn" disabled>📌 同步当前章节</button>
+                <span id="currentChapterHint" style="font-size:0.75rem; color: var(--text-light);"></span>
+              </div>
+              <textarea id="editChapterText" style="margin-top:0.4rem; min-height:120px;" placeholder="修改后的原文"></textarea>
+              <div class="flex-row" style="margin-top:0.4rem;">
+                <button class="btn primary" id="saveEditTextBtn">保存</button>
+                <button class="btn" id="resetEditTextBtn">恢复默认</button>
+              </div>
+            </div>
+          </details>
+          <details>
+            <summary style="font-size:0.9rem;">📤 导出经典全文</summary>
+            <div style="margin-top:0.4rem;">
+              <select id="exportBookSelect">
+                <option value="daodejing">道德经</option>
+                <option value="daxue">大学</option>
+                <option value="xinjing">心经</option>
+              </select>
+              <button class="btn" id="exportBtn">导出</button>
+              <textarea id="exportTextarea" style="width:100%; margin-top:0.4rem; display:none; min-height:100px;" readonly></textarea>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <div class="panel right-panel" id="rightPanel">
+        <h4>📋 逐字比对 / 原文</h4>
+        <div style="margin-bottom:0.4rem;">
+          <button class="btn active-tab" id="showDiffBtn">比对</button>
+          <button class="btn" id="showOriginalBtn">原文</button>
+        </div>
+        <div id="diffDisplay" class="result-area">等待背诵核对...</div>
+        <div id="originalDisplay" class="result-area" style="display:none; white-space:pre-wrap; line-height:1.8;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 注册 Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then(registration => {
+          console.log('Service Worker 注册成功:', registration.scope);
+        }).catch(err => {
+          console.log('Service Worker 注册失败:', err);
+        });
+      });
+    }
+  </script>
+
+  <script>
+    (function() {
+      // ---------- 帛书道德经81章 ----------
+      const boShuTexts = [
+        "上德不德，是以有德；下德不失德，是以无德。上德无为而无以为也，上仁为之而无以为也，上义为之而有以为也，上礼为之而莫之应也，则攘臂而扔之。故失道而后德，失德而后仁，失仁而后义，失义而后礼。夫礼者，忠信之薄也，而乱之首也；前识者，道之华也，而愚之首也。是以大丈夫居其厚而不居其薄，居其实而不居其华。故去彼取此。",
+        "昔之得一者：天得一以清，地得一以宁，神得一以灵，谷得一以盈，侯王得一而以为天下正。其致之也，谓天毋已清，将恐裂；谓地毋已宁，将恐发；谓神毋已灵，将恐歇；谓谷毋已盈，将恐竭；谓侯王毋已贵以高，将恐蹶。故必贵而以贱为本，必高矣而以下为基。夫是以侯王自谓孤、寡、不谷。此其贱之本与？非也。故致数誉无誉。是故不欲琭琭若玉，珞珞若石。",
+        "上士闻道，堇能行之；中士闻道，若存若亡；下士闻道，大笑之。弗笑，不足以为道。是以建言有之曰：明道如昧，进道如退，夷道如纇。上德如谷，大白如辱，广德如不足，建德如偷，质真如渝。大方无隅，大器免成，大音希声，大象无形。道褒无名。夫唯道，善始且善成。",
+        "反也者，道之动也；弱也者，道之用也。天下之物生于有，有生于无。",
+        "道生一，一生二，二生三，三生万物。万物负阴而抱阳，冲气以为和。人之所恶，唯孤、寡、不谷，而王公以自名也。物或损之而益，益之而损。故人之所教，亦议而教人。故强梁者不得其死，我将以为学父。",
+        "天下之至柔，驰骋于天下之至坚。无有入于无间，吾是以知无为之有益也。不言之教，无为之益，天下希能及之矣。",
+        "名与身孰亲？身与货孰多？得与亡孰病？甚爱必大费，多藏必厚亡。故知足不辱，知止不殆，可以长久。",
+        "大成若缺，其用不弊；大盈若冲，其用不穷。大直如屈，大巧如拙，大赢如绌。躁胜寒，静胜热。清静可以为天下正。",
+        "天下有道，却走马以粪；天下无道，戎马生于郊。罪莫大于可欲，祸莫大于不知足，咎莫憯于欲得。故知足之足，恒足矣。",
+        "不出于户，以知天下；不窥于牖，以知天道。其出也弥远，其知弥少。是以圣人不行而知，不见而明，弗为而成。",
+        "为学者日益，闻道者日损。损之又损，以至于无为。无为而无不为。取天下也，恒无事；及其有事也，不足以取天下。",
+        "圣人恒无心，以百姓之心为心。善者善之，不善者亦善之，德善也；信者信之，不信者亦信之，德信也。圣人之在天下也，歙歙焉，为天下浑其心。百姓皆属耳目焉，圣人皆孩之。",
+        "出生入死。生之徒十有三，死之徒十有三。而民生生，动皆之死地之十有三。夫何故也？以其生生也。盖闻善摄生者，陵行不避兕虎，入军不被甲兵。兕无所投其角，虎无所措其爪，兵无所容其刃。夫何故也？以其无死地焉。",
+        "道生之而德畜之，物形之而器成之。是以万物尊道而贵德。道之尊，德之贵，夫莫之爵，而恒自然也。道生之，畜之，长之，育之，亭之，毒之，养之，覆之。生而弗有也，为而弗恃也，长而弗宰也。此之谓玄德。",
+        "天下有始，以为天下母。既得其母，以知其子；既知其子，复守其母。没身不殆。塞其兑，闭其门，终身不堇；启其兑，济其事，终身不救。见小曰明，守柔曰强。用其光，复归其明。毋遗身殃，是谓袭常。",
+        "使我介有知，行于大道，唯迤是畏。大道甚夷，民甚好径。朝甚除，田甚芜，仓甚虚；服文采，带利剑，厌食而资财有余。是谓盗竽。非道也哉！",
+        "善建者不拔，善抱者不脱，子孙以祭祀不绝。修之身，其德乃真；修之家，其德有余；修之乡，其德乃长；修之邦，其德乃丰；修之天下，其德乃博。以身观身，以家观家，以乡观乡，以邦观邦，以天下观天下。吾何以知天下之然哉？以此。",
+        "含德之厚者，比于赤子。蜂虿虺蛇弗螫，攫鸟猛兽弗搏。骨弱筋柔而握固，未知牝牡之会而朘怒，精之至也。终日号而不嚘，和之至也。知和曰常，知常曰明。益生曰祥，心使气曰强。物壮即老，谓之不道。不道早已。",
+        "知者弗言，言者弗知。塞其兑，闭其门，和其光，同其尘，挫其锐，解其纷。是谓玄同。故不可得而亲，亦不可得而疏；不可得而利，亦不可得而害；不可得而贵，亦不可得而贱。故为天下贵。",
+        "以正治邦，以奇用兵，以无事取天下。吾何以知其然也哉？夫天下多忌讳，而民弥贫；民多利器，而邦家滋昏；人多智巧，而奇物滋起；法物滋彰，而盗贼多有。是以圣人之言曰：我无为而民自化，我好静而民自正，我无事而民自富，我欲不欲而民自朴。",
+        "其政闷闷，其民淳淳；其政察察，其民缺缺。祸，福之所倚；福，祸之所伏。孰知其极？其无正也，正复为奇，善复为妖。人之迷也，其日固久矣。是以方而不割，廉而不刺，直而不肆，光而不耀。",
+        "治人事天，莫若啬。夫唯啬，是以早服。早服是谓重积德，重积德则无不克，无不克则莫知其极，莫知其极，可以有国。有国之母，可以长久。是谓深根固柢、长生久视之道也。",
+        "治大国若烹小鲜。以道莅天下，其鬼不神。非其鬼不神也，其神不伤人也；非其神不伤人也，圣人亦弗伤也。夫两不相伤，故德交归焉。",
+        "大邦者，下流也，天下之牝。天下之交也，牝恒以静胜牡。为其静也，故宜为下。大邦以下小邦，则取小邦；小邦以下大邦，则取于大邦。故或下以取，或下而取。故大邦者，不过欲兼畜人；小邦者，不过欲入事人。夫皆得其欲，则大者宜为下。",
+        "道者，万物之注也，善人之宝也，不善人之所保也。美言可以市，尊行可以贺人。人之不善也，何弃之有？故立天子，置三卿，虽有拱璧以先驷马，不若坐而进此。古之所以贵此者何也？不谓求以得，有罪以免与？故为天下贵。",
+        "为无为，事无事，味无味。大小多少，报怨以德。图难乎其易也，为大乎其细也。天下之难作于易，天下之大作于细。是以圣人终不为大，故能成其大。夫轻诺必寡信，多易必多难。是以圣人犹难之，故终于无难。",
+        "其安也，易持也；其未兆也，易谋也；其脆也，易破也；其微也，易散也。为之于其未有也，治之于其未乱也。合抱之木，生于毫末；九层之台，作于羸土；百仞之高，始于足下。为之者败之，执之者失之。是以圣人无为也，故无败也；无执也，故无失也。民之从事也，恒于其成而败之。故慎终若始，则无败事矣。是以圣人欲不欲，而不贵难得之货；学不学，而复众人之所过。能辅万物之自然，而弗敢为。",
+        "故曰：为道者非以明民也，将以愚之也。民之难治也，以其智也。故以智治邦，邦之贼也；以不智治邦，邦之德也。恒知此两者，亦稽式也。恒知稽式，是谓玄德。玄德深矣，远矣，与物反矣，乃至大顺。",
+        "江海之所以能为百谷王者，以其善下之，是以能为百谷王。是以圣人之欲上民也，必以其言下之；其欲先民也，必以其身后之。故居前而民弗害也，居上而民弗重也。天下乐推而弗厌也。不以其无争与？故天下莫能与争。",
+        "小邦寡民。使有十百人之器而毋用，使民重死而远徙。有舟车，无所乘之；有甲兵，无所陈之。使民复结绳而用之。甘其食，美其服，乐其俗，安其居。邻邦相望，鸡狗之声相闻，民至老死，不相往来。",
+        "信言不美，美言不信。知者不博，博者不知。善者不多，多者不善。圣人无积，既以为人，己愈有；既以予人，己愈多。故天之道，利而不害；人之道，为而弗争。",
+        "天下皆谓我大，大而不肖。夫唯不肖，故能大。若肖，久矣其细也夫！我恒有三宝，持而保之：一曰慈，二曰俭，三曰不敢为天下先。夫慈，故能勇；俭，故能广；不敢为天下先，故能为成事长。今舍其慈且勇，舍其俭且广，舍其后且先，则必死矣。夫慈，以战则胜，以守则固。天将建之，如以慈垣之。",
+        "善为士者不武，善战者不怒，善胜敌者弗与，善用人者为之下。是谓不争之德，是谓用人，是谓配天。古之极也。",
+        "用兵有言曰：吾不敢为主而为客，吾不敢进寸而退尺。是谓行无行，攘无臂，执无兵，乃无敌矣。祸莫大于无适，无适近亡吾宝矣。故称兵相若，则哀者胜矣。",
+        "吾言甚易知也，甚易行也。而人莫之能知也，而莫之能行也。言有宗，事有君。夫唯无知也，是以不我知。知我者希，则我贵矣。是以圣人被褐而怀玉。",
+        "知不知，尚矣；不知不知，病矣。是以圣人之不病，以其病病，是以不病。",
+        "民之不畏威，则大威将至矣。毋狭其所居，毋厌其所生。夫唯弗厌，是以不厌。是以圣人自知而不自见也，自爱而不自贵也。故去彼取此。",
+        "勇于敢则杀，勇于不敢则活。此两者，或利或害。天之所恶，孰知其故？天之道，不战而善胜，不言而善应，不召而自来，坦然而善谋。天网恢恢，疏而不失。",
+        "若民恒且不畏死，奈何以杀惧之也？使民恒且畏死而为奇者，吾得而杀之，夫孰敢矣？若民恒且必畏死，则恒有司杀者。夫代司杀者杀，是代大匠斫也。夫代大匠斫者，则希不伤其手矣。",
+        "人之饥也，以其取食税之多也，是以饥。百姓之不治也，以其上有以为也，是以不治。民之轻死，以其求生之厚也，是以轻死。夫唯无以生为者，是贤贵生。",
+        "人之生也柔弱，其死也坚强。万物草木之生也柔脆，其死也枯槁。故曰：坚强者，死之徒也；柔弱微细者，生之徒也。兵强则不胜，木强则烘。强大居下，柔弱居上。",
+        "天之道，其犹张弓者也：高者抑之，下者举之；有余者损之，不足者补之。故天之道，损有余而补不足；人之道则不然，损不足而奉有余。孰能有余而有以取奉于天者乎？唯有道者乎！是以圣人为而弗有，成功而弗居也。若此，其不欲见贤也。",
+        "天下莫柔弱于水，而攻坚强者莫之能胜也，以其无以易之也。柔之胜刚，弱之胜强，天下莫弗知也，而莫能行也。故圣人之言云曰：受邦之垢，是谓社稷之主；受邦之不祥，是谓天下之王。正言若反。",
+        "和大怨，必有余怨，焉可以为善？是以圣人执右契，而不以责于人。故有德司契，无德司彻。夫天道无亲，恒与善人。",
+        "道可道也，非恒道也；名可名也，非恒名也。无名，万物之始也；有名，万物之母也。故恒无欲也，以观其妙；恒有欲也，以观其所徼。两者同出，异名同谓。玄之又玄，众妙之门。",
+        "天下皆知美之为美，斯恶已；皆知善，斯不善已。有无之相生也，难易之相成也，长短之相形也，高下之相盈也，音声之相和也，先后之相随，恒也。是以圣人居无为之事，行不言之教。万物作而弗始也，为而弗恃也，成功而弗居也。夫唯弗居，是以弗去。",
+        "不上贤，使民不争；不贵难得之货，使民不为盗；不见可欲，使民不乱。是以圣人之治也：虚其心，实其腹；弱其志，强其骨。恒使民无知无欲也，使夫智不敢。弗为而已，则无不治矣。",
+        "道冲，而用之又弗盈也。渊呵，似万物之宗。挫其锐，解其纷，和其光，同其尘。湛呵，似或存。吾不知其谁之子也，象帝之先。",
+        "天地不仁，以万物为刍狗；圣人不仁，以百姓为刍狗。天地之间，其犹橐龠与？虚而不屈，动而愈出。多闻数穷，不若守于中。",
+        "谷神不死，是谓玄牝。玄牝之门，是谓天地根。绵绵呵若存，用之不堇。",
+        "天长地久。天地之所以能长且久者，以其不自生，故能长生。是以圣人退其身而身先，外其身而身存。不以其无私与？故能成其私。",
+        "上善若水。水善利万物而有静，居众人之所恶，故几于道。居善地，心善渊，予善天，言善信，政善治，事善能，动善时。夫唯不争，故无尤。",
+        "持而盈之，不若其已；揣而锐之，不可长保。金玉盈室，莫之守也；贵富而骄，自遗咎也。功遂身退，天之道也。",
+        "载营魄抱一，能毋离乎？抟气致柔，能婴儿乎？涤除玄鉴，能毋疵乎？爱民治国，能毋以智乎？天门启阖，能为雌乎？明白四达，能毋以知乎？生之，畜之。生而弗有，长而弗宰也。是谓玄德。",
+        "卅辐同一毂，当其无，有车之用也。埏埴以为器，当其无，有器之用也。凿户牖以为室，当其无，有室之用也。故有之以为利，无之以为用。",
+        "五色使人目盲，五音使人耳聋，五味使人口爽。驰骋田猎使人心发狂，难得之货使人行妨。是以圣人之治也，为腹而不为目。故去彼取此。",
+        "宠辱若惊，贵大患若身。何谓宠辱若惊？宠之为下，得之若惊，失之若惊，是谓宠辱若惊。何谓贵大患若身？吾所以有大患者，为吾有身；及吾无身，吾有何患？故贵为身于为天下，若可以托天下矣；爱以身为天下，如可以寄天下矣。",
+        "视之而弗见，名之曰微；听之而弗闻，名之曰希；捪之而弗得，名之曰夷。三者不可致诘，故混而为一。一者，其上不皦，其下不昧。绳绳不可名也，复归于无物。是谓无状之状，无物之象。是谓惚恍。随而不见其后，迎而不见其首。执今之道，以御今之有。以知古始，是谓道纪。",
+        "古之善为道者，微妙玄达，深不可识。夫唯不可识，故强为之容曰：豫呵，其若冬涉水；犹呵，其若畏四邻；严呵，其若客；涣呵，其若凌释；敦呵，其若朴；混呵，其若浊；旷呵，其若谷。浊而静之，徐清；安以动之，徐生。保此道不欲盈。是以能敝而不成。",
+        "至虚极也，守静笃也。万物并作，吾以观其复也。夫物芸芸，各复归于其根。归根曰静，静，是谓复命。复命常也，知常明也。不知常，妄；妄作，凶。知常容，容乃公，公乃王，王乃天，天乃道，道乃久。没身不殆。",
+        "太上，下知有之；其次，亲誉之；其次，畏之；其下，侮之。信不足，案有不信。犹呵，其贵言也。成功遂事，而百姓谓我自然。",
+        "故大道废，案有仁义；智慧出，案有大伪；六亲不和，案有孝慈；邦家昏乱，案有贞臣。",
+        "绝圣弃智，民利百倍；绝仁弃义，民复孝慈；绝巧弃利，盗贼无有。此三言也，以为文未足，故令之有所属：见素抱朴，少私而寡欲。绝学无忧。",
+        "唯与呵，其相去几何？美与恶，其相去何若？人之所畏，亦不可以不畏人。望呵，其未央哉！众人熙熙，若享于太牢，而春登台。我泊焉未兆，若婴儿未孩。累呵，如无所归。众人皆有余，我独匮。我愚人之心也，沌沌呵。俗人昭昭，我独若昏呵；俗人察察，我独闷闷呵。惚呵，其若海；恍呵，其若无所止。众人皆有以，我独顽以悝。我欲独异于人，而贵食母。",
+        "孔德之容，唯道是从。道之物，唯恍唯惚。惚呵恍呵，中有象呵；恍呵惚呵，中有物呵。幽呵冥呵，中有情呵；其情甚真，其中有信。自今及古，其名不去，以顺众父。吾何以知众父之然也？以此。",
+        "炊者不立。自视者不彰，自见者不明，自伐者无功，自矜者不长。其在道曰：余食赘行。物或恶之，故有欲者弗居。",
+        "曲则全，枉则正，洼则盈，敝则新，少则得，多则惑。是以圣人执一，以为天下牧。不自视故彰，不自见故明，不自伐故有功，不自矜故长。夫唯不争，故莫能与之争。古之所谓曲全者，岂语哉？诚全归之。",
+        "希言自然。飘风不终朝，暴雨不终日。孰为此？天地而弗能久，又况于人乎？故从事而道者，同于道；德者，同于德；失者，同于失。同于德者，道亦德之；同于失者，道亦失之。",
+        "有物混成，先天地生。寂呵寥呵，独立而不改，可以为天地母。吾未知其名，字之曰道。吾强为之名曰大。大曰逝，逝曰远，远曰反。道大，天大，地大，人亦大。国中有四大，而人居一焉。人法地，地法天，天法道，道法自然。",
+        "重为轻根，静为躁君。是以君子终日行，不离其辎重。虽有荣观，燕处超然。若何万乘之王，而以身轻于天下？轻则失本，躁则失君。",
+        "善行者无辙迹，善言者无瑕谪，善数者不以筹策。善闭者无关楗而不可启也，善结者无绳约而不可解也。是以圣人恒善救人，而无弃人；物无弃财，是谓袭明。故善人，善人之师；不善人，善人之资也。不贵其师，不爱其资，虽智乎大迷。是谓妙要。",
+        "知其雄，守其雌，为天下溪。为天下溪，恒德不离。恒德不离，复归于婴儿。知其荣，守其辱，为天下谷。为天下谷，恒德乃足。恒德乃足，复归于朴。知其白，守其黑，为天下式。为天下式，恒德不忒。恒德不忒，复归于无极。朴散则为器，圣人用则为官长。夫大制无割。",
+        "将欲取天下而为之，吾见其弗得已。夫天下神器也，非可为者也。为者败之，执者失之。物或行或随，或嘘或吹，或强或羸，或培或隳。是以圣人去甚，去泰，去奢。",
+        "以道佐人主，不以兵强于天下。其事好还。师之所居，荆棘生之。善者果而已矣，毋以取强焉。果而毋骄，果而毋矜，果而毋伐，果而毋得已居。是谓果而不强。物壮而老，是谓之不道。不道早已。",
+        "夫兵者，不祥之器也。物或恶之，故有欲者弗居。君子居则贵左，用兵则贵右。故兵者非君子之器也。兵者不祥之器也，不得已而用之。恬淡为上，勿美也。若美之，是乐杀人也。夫乐杀人，不可以得志于天下矣。是以吉事上左，丧事上右。是以偏将军居左，上将军居右。言以丧礼居之也。杀人众，以悲哀莅之；战胜，以丧礼处之。",
+        "道恒无名。朴虽小，而天下弗敢臣。侯王若能守之，万物将自宾。天地相合，以雨甘露。民莫之令而自均焉。始制有名。名亦既有，夫亦将知止。知止所以不殆。譬道之在天下也，犹小谷之与江海也。",
+        "知人者智也，自知者明也。胜人者有力也，自胜者强也。知足者富也，强行者有志也。不失其所者久也，死而不亡者寿也。",
+        "道泛呵，其可左右也。成功遂事而弗名有也，万物归焉而弗为主。则恒无欲也，可名于小；万物归焉而弗为主，可名于大。是以圣人之能成大也，以其不为大也。故能成大。",
+        "执大象，天下往。往而不害，安平泰。乐与饵，过客止。故道之出言也，曰淡呵其无味也。视之不足见也，听之不足闻也，用之不可既也。",
+        "将欲歙之，必固张之；将欲弱之，必固强之；将欲去之，必固与之；将欲夺之，必固予之。是谓微明。柔弱胜强。鱼不可脱于渊，邦之利器不可以示人。",
+        "道恒无名。侯王若能守之，万物将自化。化而欲作，吾将镇之以无名之朴。镇之以无名之朴，夫将不辱。不辱以情，天地将自正。"
+      ];
+      const chineseNums = ['一','二','三','四','五','六','七','八','九','十','十一','十二','十三','十四','十五','十六','十七','十八','十九','二十','二十一','二十二','二十三','二十四','二十五','二十六','二十七','二十八','二十九','三十','三十一','三十二','三十三','三十四','三十五','三十六','三十七','三十八','三十九','四十','四十一','四十二','四十三','四十四','四十五','四十六','四十七','四十八','四十九','五十','五十一','五十二','五十三','五十四','五十五','五十六','五十七','五十八','五十九','六十','六十一','六十二','六十三','六十四','六十五','六十六','六十七','六十八','六十九','七十','七十一','七十二','七十三','七十四','七十五','七十六','七十七','七十八','七十九','八十','八十一'];
+      
+      const boShuChapters = boShuTexts.map((text, idx) => {
+        const num = idx + 1;
+        if (num <= 44) {
+          return {
+            id: `帛书${num}`,
+            title: `德经${chineseNums[num-1]}章（帛书${num}）`,
+            text,
+            num
+          };
+        } else {
+          const daoChapterNum = num - 44;
+          return {
+            id: `帛书${num}`,
+            title: `道经${chineseNums[daoChapterNum-1]}章（帛书${num}）`,
+            text,
+            num
+          };
+        }
+      });
+
+      const daXueText = `大学之道，在明明德，在亲民，在止于至善。知止而后有定，定而后能静，静而后能安，安而后能虑，虑而后能得。物有本末，事有终始，知所先后，则近道矣。古之欲明明德于天下者，先治其国；欲治其国者，先齐其家；欲齐其家者，先修其身；欲修其身者，先正其心；欲正其心者，先诚其意；欲诚其意者，先致其知，致知在格物。物格而后知至，知至而后意诚，意诚而后心正，心正而后身修，身修而后家齐，家齐而后国治，国治而后天下平。自天子以至于庶人，壹是皆以修身为本。其本乱而末治者否矣，其所厚者薄，而其所薄者厚，未之有也！此谓知本，此谓知之至也。所谓诚其意者，毋自欺也，如恶恶臭，如好好色，此之谓自谦，故君子必慎其独也！小人闲居为不善，无所不至，见君子而后厌然，掩其不善，而著其善。人之视己，如见其肺肝然，则何益矣！此谓诚于中，形于外，故君子必慎其独也。曾子曰：“十目所视，十手所指，其严乎！”富润屋，德润身，心广体胖，故君子必诚其意。《诗》云：“瞻彼淇澳，菉竹猗猗。有斐君子，如切如磋，如琢如磨。瑟兮僩兮，赫兮喧兮。有斐君子，终不可喧兮！”“如切如磋”者，道学也；“如琢如磨”者，自修也；“瑟兮僩兮”者，恂栗也；“赫兮喧兮”者，威仪也；“有斐君子，终不可喧兮”者，道盛德至善，民之不能忘也。《诗》云：“于戏前王不忘！”君子贤其贤而亲其亲，小人乐其乐而利其利，此以没世不忘也。《康诰》曰：“克明德。”《太甲》曰：“顾諟天之明命。”《帝典》曰：“克明峻德。”皆自明也。汤之盘铭曰：“苟日新，日日新，又日新。”《康诰》曰：“作新民。”《诗》曰：“周虽旧邦，其命惟新。”是故君子无所不用其极。《诗》云：“邦畿千里，惟民所止。”《诗》云：“缗蛮黄鸟，止于丘隅。”子曰：“于止，知其所止，可以人而不如鸟乎？”《诗》云：“穆穆文王，于缉熙敬止！”为人君，止于仁；为人臣，止于敬；为人子，止于孝；为人父，止于慈；与国人交，止于信。子曰：“听讼，吾犹人也，必也使无讼乎！”无情者不得尽其辞，大畏民志。此谓知本。所谓修身在正其心者：身有所忿懥，则不得其正；有所恐惧，则不得其正；有所好乐，则不得其正；有所忧患，则不得其正。心不在焉，视而不见，听而不闻，食而不知其味。此谓修身在正其心。所谓齐其家在修其身者：人之其所亲爱而辟焉，之其所贱恶而辟焉，之其所畏敬而辟焉，之其所哀矜而辟焉，之其所敖惰而辟焉。故好而知其恶，恶而知其美者，天下鲜矣！故谚有之曰：“人莫知其子之恶，莫知其苗之硕。”此谓身不修不可以齐其家。所谓治国必先齐其家者，其家不可教而能教人者，无之。故君子不出家而成教于国：孝者，所以事君也；弟者，所以事长也；慈者，所以使众也。《康诰》曰：“如保赤子”，心诚求之，虽不中不远矣。未有学养子而后嫁者也！一家仁，一国兴仁；一家让，一国兴让；一人贪戾，一国作乱。其机如此。此谓一言偾事，一人定国。尧、舜率天下以仁，而民从之；桀、纣率天下以暴，而民从之。其所令反其所好，而民不从。是故君子有诸己而后求诸人，无诸己而后非诸人。所藏乎身不恕，而能喻诸人者，未之有也。故治国在齐其家。《诗》云：“桃之夭夭，其叶蓁蓁；之子于归，宜其家人。”宜其家人，而后可以教国人。《诗》云：“宜兄宜弟。”宜兄宜弟，而后可以教国人。《诗》云：“其仪不忒，正是四国。”其为父子兄弟足法，而后民法之也。此谓治国在齐其家。所谓平天下在治其国者：上老老而民兴孝，上长长而民兴弟，上恤孤而民不倍，是以君子有洁矩之道也。所恶于上，毋以使下；所恶于下，毋以事上；所恶于前，毋以先后；所恶于后，毋以从前；所恶于右，毋以交于左；所恶于左，毋以交于右。此之谓洁矩之道。《诗》云：“乐只君子，民之父母。”民之所好好之，民之所恶恶之，此之谓民之父母。《诗》云：“节彼南山，维石岩岩。赫赫师尹，民具尔瞻。”有国者不可以不慎，辟则为天下戮矣。《诗》云：“殷之未丧师，克配上帝。仪监于殷，峻命不易。”道得众则得国，失众则失国。是故君子先慎乎德。有德此有人，有人此有土，有土此有财，有财此有用。德者本也，财者末也，外本内末，争民施夺。是故财聚则民散，财散则民聚。是故言悖而出者，亦悖而入；货悖而入者，亦悖而出。《康诰》曰：“惟命不于常！”道善则得之，不善则失之矣。楚书曰：“楚国无以为宝，惟善以为宝。”舅犯曰：“亡人无以为宝，仁亲以为宝。”《秦誓》曰：“若有一个臣，断断兮无他技，其心休休焉，其如有容焉。人之有技，若己有之；人之彦圣，其心好之，不啻若自其口出。实能容之，以能保我子孙黎民，尚亦有利哉！人之有技，媢嫉以恶之；人之彦圣，而违之俾不通。实不能容，以不能保我子孙黎民，亦曰殆哉！”唯仁人放流之，迸诸四夷，不与同中国，此谓唯仁人为能爱人，能恶人。见贤而不能举，举而不能先，命也；见不善而不能退，退而不能远，过也。好人之所恶，恶人之所好，是谓拂人之性，灾必逮夫身。是故君子有大道，必忠信以得之，骄泰以失之。生财有大道。生之者众，食之者寡，为之者疾，用之者舒，则财恒足矣。仁者以财发身，不仁者以身发财。未有上好仁而下不好义者也，未有好义其事不终者也，未有府库财非其财者也。孟献子曰：“畜马乘，不察于鸡豚；伐冰之家，不畜牛羊；百乘之家，不畜聚敛之臣。与其有聚敛之臣，宁有盗臣。”此谓国不以利为利，以义为利也。长国家而务财用者，必自小人矣。彼为善之，小人之使为国家，灾害并至。虽有善者，亦无如之何矣！此谓国不以利为利，以义为利也。`;
+
+      const xinJingText = `观自在菩萨，行深般若波罗蜜多时，照见五蕴皆空，度一切苦厄。舍利子，色不异空，空不异色，色即是空，空即是色，受想行识亦复如是。舍利子，是诸法空相，不生不灭，不垢不净，不增不减。是故空中无色，无受想行识，无眼耳鼻舌身意，无色声香味触法，无眼界乃至无意识界，无无明亦无无明尽，乃至无老死亦无老死尽，无苦集灭道，无智亦无得。以无所得故，菩提萨埵依般若波罗蜜多故，心无挂碍，无挂碍故无有恐怖，远离颠倒梦想，究竟涅槃。三世诸佛依般若波罗蜜多故，得阿耨多罗三藐三菩提。故知般若波罗蜜多是大神咒，是大明咒，是无上咒，是无等等咒，能除一切苦，真实不虚。故说般若波罗蜜多咒，即说咒曰：揭谛揭谛，波罗揭谛，波罗僧揭谛，菩提萨婆诃。`;
+
+      const booksData = [
+        { id: 'daodejing', title: '帛书道德经', parts: [{ name: '德经（1-44）', chapters: boShuChapters.slice(0,44) }, { name: '道经（45-81）', chapters: boShuChapters.slice(44) }] },
+        { id: 'daxue', title: '大学（古本）', parts: [{ name: '全文', chapters: [{id:'大学全文',title:'大学',text:daXueText}] }] },
+        { id: 'xinjing', title: '般若波罗蜜多心经', parts: [{ name: '全文', chapters: [{id:'心经全文',title:'心经',text:xinJingText}] }] }
+      ];
+      const allChapters = [];
+      booksData.forEach(book => book.parts.forEach(part => part.chapters.forEach(ch => allChapters.push({...ch, bookTitle: book.title}))));
+
+      // 存储
+      const STORAGE_HISTORY = 'recite_history_pwa2';
+      const STORAGE_CUSTOM_TEXTS = 'custom_texts_pwa2';
+      let history = JSON.parse(localStorage.getItem(STORAGE_HISTORY) || '[]');
+      let customTexts = JSON.parse(localStorage.getItem(STORAGE_CUSTOM_TEXTS) || '{}');
+      function saveHistory() { localStorage.setItem(STORAGE_HISTORY, JSON.stringify(history)); }
+      function saveCustomTexts() { localStorage.setItem(STORAGE_CUSTOM_TEXTS, JSON.stringify(customTexts)); }
+      function getChapterText(chapterId) {
+        return (customTexts[chapterId] && customTexts[chapterId].trim() !== '') ? customTexts[chapterId] : (allChapters.find(c => c.id === chapterId)?.text || '');
+      }
+      function getChapterStatus(chapterId) {
+        const records = history.filter(h => h.chapterId === chapterId);
+        if (records.length === 0) return 'unattempted';
+        return records[records.length-1].errors === 0 ? 'mastered' : 'unfamiliar';
+      }
+
+      const chapterListEl = document.getElementById('chapterList');
+      const questionText = document.getElementById('questionText');
+      const chapterGuessArea = document.getElementById('chapterGuessArea');
+      const chapterGuessSelect = document.getElementById('chapterGuessSelect');
+      const chapterFeedback = document.getElementById('chapterFeedback');
+      const directChapterSelect = document.getElementById('directChapterSelect');
+      const userReciteInput = document.getElementById('userReciteInput');
+      const diffDisplay = document.getElementById('diffDisplay');
+      const originalDisplay = document.getElementById('originalDisplay');
+      const showDiffBtn = document.getElementById('showDiffBtn');
+      const showOriginalBtn = document.getElementById('showOriginalBtn');
+      const rangeSelect = document.getElementById('rangeSelect');
+      const weightedCheck = document.getElementById('weightedCheck');
+      const editChapterSelect = document.getElementById('editChapterSelect');
+      const editChapterText = document.getElementById('editChapterText');
+      const showAnswerEarlyBtn = document.getElementById('showAnswerEarlyBtn');
+      const earlyAnswerHint = document.getElementById('earlyAnswerHint');
+      const showAnswerBtn = document.getElementById('showAnswerBtn');
+      const syncCurrentChapterBtn = document.getElementById('syncCurrentChapterBtn');
+      const currentChapterHint = document.getElementById('currentChapterHint');
+      const resultToggleBtn = document.getElementById('resultToggleBtn');
+      const rightPanel = document.getElementById('rightPanel');
+      const sidebar = document.getElementById('sidebar');
+      const menuBtn = document.getElementById('menuBtn');
+      const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+      let currentMode = 'identify', currentQuestionChapter = null, currentReciteChapter = null;
+
+      function populateSelect(sel, chapters) {
+        sel.innerHTML = '';
+        chapters.forEach(ch => { const o = document.createElement('option'); o.value = ch.id; o.textContent = ch.title || ch.id; sel.appendChild(o); });
+      }
+      function renderChapterList() {
+        chapterListEl.innerHTML = '';
+        booksData.forEach(book => {
+          const group = document.createElement('li'); group.className = 'book-group';
+          const titleDiv = document.createElement('div'); titleDiv.className = 'book-title';
+          titleDiv.innerHTML = `${book.title} <span>▼</span>`;
+          const chaptersDiv = document.createElement('div'); chaptersDiv.className = 'book-chapters';
+          book.parts.forEach(part => part.chapters.forEach(ch => {
+            const status = getChapterStatus(ch.id);
+            const item = document.createElement('div'); item.className = 'chapter-item';
+            item.innerHTML = `<span class="status-dot ${status}"></span><span class="chapter-name">${ch.title || ch.id}</span>`;
+            item.addEventListener('click', () => selectChapterForRecite(ch));
+            chaptersDiv.appendChild(item);
+          }));
+          titleDiv.addEventListener('click', () => chaptersDiv.classList.toggle('open'));
+          group.appendChild(titleDiv); group.appendChild(chaptersDiv);
+          chapterListEl.appendChild(group);
+        });
+        populateSelect(directChapterSelect, allChapters);
+        populateSelect(editChapterSelect, allChapters);
+      }
+      function updateModeUI() {
+        document.getElementById('modeOneUI').style.display = currentMode === 'identify' ? 'block' : 'none';
+        document.getElementById('modeTwoUI').style.display = currentMode === 'direct' ? 'block' : 'none';
+      }
+      function pickRandomSentence(text) {
+        const sentences = text.split(/[。！？；]/).filter(s => s.trim().length >= 4);
+        return sentences.length ? sentences[Math.floor(Math.random()*sentences.length)].trim()+'。' : text.substring(0,15)+'…';
+      }
+      function getChaptersByRange(range) {
+        if (range === 'all') return allChapters.slice();
+        if (range === 'daode-all') return allChapters.filter(c => c.id.startsWith('帛书'));
+        if (range === 'daode-de') return boShuChapters.slice(0,44);
+        if (range === 'daode-dao') return boShuChapters.slice(44);
+        const match = range.match(/^(de|dao)-(\d+)-(\d+)$/);
+        if (match) {
+          const prefix = match[1]; const start = parseInt(match[2]); const end = parseInt(match[3]);
+          if (prefix === 'de') return boShuChapters.filter(c => c.num >= start && c.num <= end);
+          else if (prefix === 'dao') {
+            const daoStart = start + 44; const daoEnd = end + 44;
+            return boShuChapters.filter(c => c.num >= daoStart && c.num <= daoEnd);
+          }
+        }
+        return [];
+      }
+      function weightedRandomChapter(chapters) {
+        if (!weightedCheck.checked) return chapters[Math.floor(Math.random()*chapters.length)];
+        const errMap = {}; history.forEach(h => errMap[h.chapterId] = (errMap[h.chapterId]||0)+h.errors);
+        const weights = chapters.map(ch => 1 + (errMap[ch.id]||0)*5);
+        const total = weights.reduce((a,b)=>a+b,0);
+        let r = Math.random()*total;
+        for (let i=0; i<chapters.length; i++) { r -= weights[i]; if (r <= 0) return chapters[i]; }
+        return chapters[chapters.length-1];
+      }
+      function randomQuestion() {
+        const chapters = getChaptersByRange(rangeSelect.value);
+        if (!chapters.length) return;
+        populateSelect(chapterGuessSelect, chapters);
+        currentQuestionChapter = weightedRandomChapter(chapters);
+        currentReciteChapter = null;
+        questionText.textContent = `📜 “${pickRandomSentence(getChapterText(currentQuestionChapter.id))}”`;
+        chapterGuessArea.style.display = 'flex';
+        chapterFeedback.textContent = '';
+        document.getElementById('reciteArea').style.display = 'none';
+        userReciteInput.value = '';
+        showAnswerEarlyBtn.disabled = false;
+        earlyAnswerHint.textContent = '';
+        showDiffTab();
+        updateEditSyncButton();
+      }
+      function selectChapterForRecite(chapter) {
+        currentReciteChapter = chapter;
+        if (currentMode === 'direct') startRecite(chapter);
+        displayChapterOriginal(chapter);
+        sidebar.classList.remove('open');
+        updateEditSyncButton();
+      }
+      function startRecite(chapter) {
+        currentReciteChapter = chapter;
+        document.getElementById('reciteArea').style.display = 'block';
+        userReciteInput.value = '';
+        if (currentMode === 'identify') questionText.textContent = `请背诵《${chapter.title || chapter.id}》全文`;
+        showDiffTab();
+        updateEditSyncButton();
+      }
+      function displayChapterOriginal(chapter) {
+        if (!chapter) return;
+        originalDisplay.textContent = getChapterText(chapter.id);
+        showOriginalTab();
+      }
+      function showDiffTab() {
+        diffDisplay.style.display = 'block';
+        originalDisplay.style.display = 'none';
+        showDiffBtn.classList.add('active-tab');
+        showOriginalBtn.classList.remove('active-tab');
+      }
+      function showOriginalTab() {
+        diffDisplay.style.display = 'none';
+        originalDisplay.style.display = 'block';
+        showDiffBtn.classList.remove('active-tab');
+        showOriginalBtn.classList.add('active-tab');
+      }
+      function updateEditSyncButton() {
+        const chapter = currentReciteChapter || currentQuestionChapter;
+        if (chapter) {
+          syncCurrentChapterBtn.disabled = false;
+          currentChapterHint.textContent = `当前：《${chapter.title || chapter.id}》`;
+        } else {
+          syncCurrentChapterBtn.disabled = true;
+          currentChapterHint.textContent = '无';
+        }
+      }
+      resultToggleBtn.addEventListener('click', () => {
+        rightPanel.classList.toggle('visible');
+        resultToggleBtn.textContent = rightPanel.classList.contains('visible') ? '📋 隐藏' : '📋 结果';
+      });
+      document.addEventListener('click', (e) => {
+        if (window.innerWidth <= 767 && sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target !== menuBtn) {
+          sidebar.classList.remove('open');
+        }
+      });
+      menuBtn.addEventListener('click', () => sidebar.classList.add('open'));
+      closeSidebarBtn.addEventListener('click', () => sidebar.classList.remove('open'));
+      syncCurrentChapterBtn.addEventListener('click', () => {
+        const chapter = currentReciteChapter || currentQuestionChapter;
+        if (!chapter) return;
+        editChapterSelect.value = chapter.id;
+        editChapterText.value = getChapterText(chapter.id);
+      });
+      showAnswerEarlyBtn.addEventListener('click', () => {
+        if (!currentQuestionChapter) return;
+        displayChapterOriginal(currentQuestionChapter);
+        earlyAnswerHint.textContent = `出自《${currentQuestionChapter.title || currentQuestionChapter.id}》`;
+        if (window.innerWidth <= 767) { rightPanel.classList.add('visible'); resultToggleBtn.textContent = '📋 隐藏'; }
+      });
+      document.getElementById('randomQuestionBtn').addEventListener('click', randomQuestion);
+      document.getElementById('submitChapterGuess').addEventListener('click', ()=>{
+        if (!currentQuestionChapter) return;
+        if (chapterGuessSelect.value === currentQuestionChapter.id) {
+          chapterFeedback.textContent = '✅ 正确！请背诵该章原文。';
+          startRecite(currentQuestionChapter);
+        } else {
+          chapterFeedback.textContent = '❌ 不对，再试。';
+        }
+      });
+      document.getElementById('startDirectRecite').addEventListener('click', ()=>{
+        const ch = allChapters.find(c=>c.id===directChapterSelect.value);
+        if (ch) startRecite(ch);
+      });
+      showAnswerBtn.addEventListener('click', ()=>{
+        if (currentReciteChapter) {
+          displayChapterOriginal(currentReciteChapter);
+          if (window.innerWidth <= 767) { rightPanel.classList.add('visible'); resultToggleBtn.textContent = '📋 隐藏'; }
+        }
+      });
+      showDiffBtn.addEventListener('click', showDiffTab);
+      showOriginalBtn.addEventListener('click', ()=>{
+        if (currentReciteChapter) displayChapterOriginal(currentReciteChapter);
+        else showOriginalTab();
+      });
+      function diffChars(original, user) {
+        const o=[...original], u=[...user];
+        const m=o.length, n=u.length;
+        const dp=Array(m+1).fill().map(()=>Array(n+1).fill(0));
+        for (let i=m-1;i>=0;i--) for (let j=n-1;j>=0;j--) dp[i][j] = o[i]===u[j] ? 1+dp[i+1][j+1] : Math.max(dp[i][j+1],dp[i+1][j]);
+        const ops=[]; let i=0,j=0;
+        while(i<m||j<n){
+          if(i<m&&j<n&&o[i]===u[j]){ ops.push({type:'equal',o:o[i],u:u[j]}); i++;j++; }
+          else if(j<n&&(i>=m||dp[i][j+1]>=dp[i+1][j])){ ops.push({type:'insert',u:u[j]}); j++; }
+          else if(i<m&&(j>=n||dp[i+1][j]>dp[i][j+1])){ ops.push({type:'delete',o:o[i]}); i++; }
+        }
+        const merged=[];
+        for(let k=0;k<ops.length;k++){
+          const cur=ops[k];
+          if(cur.type==='delete'&&k+1<ops.length&&ops[k+1].type==='insert'){
+            merged.push({type:'replace',o:cur.o,u:ops[k+1].u}); k++;
+          }else merged.push(cur);
+        }
+        return merged;
+      }
+      function renderDiff(original, user) {
+        const ops = diffChars(original, user);
+        let html='<div style="display:flex; flex-direction:column; gap:0.2rem;">';
+        html+='<div><span style="font-size:0.8rem;">你的：</span>';
+        ops.forEach(op=>{
+          if(op.type==='equal') html+=`<span style="color:var(--correct)">${op.u}</span>`;
+          else if(op.type==='replace') html+=`<span style="color:var(--error);text-decoration:line-through">${op.u}</span>`;
+          else if(op.type==='delete') html+=`<span style="opacity:0.3">␣</span>`;
+          else if(op.type==='insert') html+=`<span style="color:var(--insert);background:#fce4ec">${op.u}</span>`;
+        });
+        html+='</div><div><span style="font-size:0.8rem;">原文：</span>';
+        ops.forEach(op=>{
+          if(op.type==='equal') html+=`<span style="color:var(--correct)">${op.o}</span>`;
+          else if(op.type==='replace') html+=`<span style="color:var(--error);text-decoration:line-through">${op.o}</span>`;
+          else if(op.type==='delete') html+=`<span style="color:var(--delete)">${op.o}</span>`;
+          else if(op.type==='insert') html+=`<span style="opacity:0.3">␣</span>`;
+        });
+        html+='</div></div>';
+        return {html, errors: ops.filter(o=>o.type!=='equal').length};
+      }
+      document.getElementById('submitReciteBtn').addEventListener('click',()=>{
+        if(!currentReciteChapter) return;
+        const userText = userReciteInput.value;
+        const original = getChapterText(currentReciteChapter.id);
+        const {html, errors} = renderDiff(original, userText);
+        diffDisplay.innerHTML = html;
+        showDiffTab();
+        history.push({timestamp:Date.now(), chapterId:currentReciteChapter.id, errors});
+        saveHistory();
+        renderChapterList();
+        if (window.innerWidth <= 767) { rightPanel.classList.add('visible'); resultToggleBtn.textContent = '📋 隐藏'; }
+      });
+      document.getElementById('voiceInputBtn').addEventListener('click',()=>{
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if(!SR) return alert('不支持语音');
+        const rec = new SR(); rec.lang='zh-CN'; rec.start();
+        rec.onresult = e => userReciteInput.value += e.results[0][0].transcript;
+      });
+      document.getElementById('loadEditTextBtn').addEventListener('click',()=> editChapterText.value = getChapterText(editChapterSelect.value) );
+      document.getElementById('saveEditTextBtn').addEventListener('click',()=>{
+        const id = editChapterSelect.value;
+        customTexts[id] = editChapterText.value;
+        saveCustomTexts();
+        alert('原文已更新。');
+      });
+      document.getElementById('resetEditTextBtn').addEventListener('click',()=>{
+        const id = editChapterSelect.value;
+        delete customTexts[id];
+        saveCustomTexts();
+        editChapterText.value = getChapterText(id);
+        alert('已恢复默认原文。');
+      });
+      editChapterSelect.addEventListener('change', ()=> editChapterText.value = getChapterText(editChapterSelect.value) );
+      document.getElementById('exportBtn').addEventListener('click', ()=>{
+        const bookId = document.getElementById('exportBookSelect').value;
+        const book = booksData.find(b => b.id === bookId);
+        if (!book) return;
+        let fullText = '';
+        book.parts.forEach(part => part.chapters.forEach(ch => fullText += `${ch.title || ch.id}\n${getChapterText(ch.id)}\n\n`));
+        const ta = document.getElementById('exportTextarea');
+        ta.style.display = 'block';
+        ta.value = fullText;
+        navigator.clipboard.writeText(fullText).then(() => alert('全文已复制到剪贴板'));
+      });
+      document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',function(){
+        document.querySelectorAll('.mode-btn').forEach(x=>x.classList.remove('active'));
+        this.classList.add('active');
+        currentMode = this.dataset.mode;
+        updateModeUI();
+        document.getElementById('reciteArea').style.display='none';
+        chapterGuessArea.style.display='none';
+        updateEditSyncButton();
+      }));
+      document.getElementById('darkToggle').addEventListener('click',()=>{
+        document.body.classList.toggle('dark');
+        document.getElementById('darkToggle').textContent = document.body.classList.contains('dark') ? '☀️' : '🌓';
+      });
+      renderChapterList();
+      updateModeUI();
+      chapterGuessArea.style.display = 'none';
+      showAnswerEarlyBtn.disabled = true;
+      updateEditSyncButton();
+      if (window.innerWidth <= 767) {
+        rightPanel.classList.remove('visible');
+        resultToggleBtn.textContent = '📋 结果';
+      }
+    })();
+  </script>
+</body>
+</html>
